@@ -1,0 +1,46 @@
+name: DevSecOps Cajero TFG
+
+on:
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  sast-java:
+    name: 🕵️ Análisis de Inyección SQL (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar Semgrep
+        run: pip install semgrep
+      - name: Escanear código Java
+        # Semgrep detectará el SQL Injection en Cajero.java
+        run: semgrep scan --config auto --error || true
+
+  sca-docker:
+    name: 🐳 Escaneo del Contenedor (Trivy)
+    needs: sast-java
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compilar imagen Docker del Cajero
+        run: docker build -t cajero-app:latest .
+      - name: Escanear imagen con Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'cajero-app:latest'
+          format: 'table'
+          exit-code: '0' # Lo dejamos en 0 para que no aborte y puedas ver Tfsec
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  iac-terraform:
+    name: ☁️ Análisis de Infraestructura (Tfsec)
+    needs: sca-docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Escanear main.tf con Tfsec
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working_directory: ./infra
